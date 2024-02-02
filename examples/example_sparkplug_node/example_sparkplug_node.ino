@@ -1,5 +1,4 @@
 #include <BasicTag.h>
-#include <EmbeddedSparkplugPayloads.h>
 #include <SparkplugNode.h>
 
 // Declare global variables
