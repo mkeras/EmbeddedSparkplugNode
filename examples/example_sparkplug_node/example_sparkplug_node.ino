@@ -7,7 +7,7 @@ const char* group_id = "testing-group";  // Sparkplug group id
 const char* node_id = "arduino-r4-wifi-dev";  // Sparkplug node id
 size_t payload_buffer_size = 1024;  // How many bytes to allocate for storing the payloads
 
-SparkplugNodeConfig* nodeData = NULL;
+SparkplugNodeConfig* nodeData = NULL; 
 
 uint64_t loop_count_var = 0;
 
@@ -28,6 +28,7 @@ void setup() {
   // Change scan rate to 5 seconds
   *(nodeData->vars.scan_rate_tag_value) = 5000;
 
+  // Print the newly instantiated node
   printSparkplugNodeConfig(nodeData);
 
 
@@ -56,12 +57,14 @@ void loop() {
   loop_count_var++;
   scanCount++;
 
+
   // Call the tick node function
   nodeState = tickSparkplugNode(nodeData);
 
-  // Check the resulting SparkplugNodeState and act accordingly
+  // Check the resulting SparkplugNodeState and take appropriate action
   switch(nodeState) {
     case spn_ERROR_NODE_NULL:
+      scanCount -= 1;
       Serial.println("FAILED TO START, IGNORING LOOP!");
       delay(60000);
       return;
@@ -69,8 +72,9 @@ void loop() {
       scanCount -= 1;
       return;
     case spn_SCAN_FAILED:
+      scanCount -= 1;
       Serial.println("ERROR: SCAN TAGS FAILED");
-      break;
+      return;
     case spn_MAKE_NBIRTH_FAILED:
       Serial.println("ERROR: FAILED TO MAKE NBIRTH PAYLOAD");
       break;
@@ -93,6 +97,7 @@ void loop() {
       }
       break;
     default:
+      scanCount -= 1;
       Serial.print("ERROR: Unknown State returned: ");
       int nodeStateInt = (int)nodeState;
       Serial.println(nodeStateInt);
@@ -139,9 +144,9 @@ void printSparkplugNodeConfig(SparkplugNodeConfig* node) {
 uint64_t dummyTimestampFunction() {
   /*
   This function does not provide an actual timestamp.
-  A proper function would use an RTC library, etc to return a real epoch timestamp
+  A proper function would use an RTC library, sync with NTP server, etc to return a real epoch timestamp
   */
-  return uint64_t(1706800000000) + millis();
+  return uint64_t(1706900000000) + millis();
 }
 
 

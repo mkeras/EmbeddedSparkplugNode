@@ -223,7 +223,13 @@ SparkplugNodeState makeNDEATHPayload(SparkplugNodeConfig* node) {
         readBasicTag(node->node_tags.bd_seq, node->timestamp_function());
     }
 
-    if (makeNDEATH(node->timestamp_function())) return spn_NDATA_PL_READY;
+    if (makeNDEATH(node->timestamp_function())) {
+        node->mqtt_message.payload = &(node->payload_buffer);
+        node->mqtt_message.topic = node->topics.NBIRTH;
+        return spn_NDATA_PL_READY;
+    }
+    node->mqtt_message.payload = NULL;
+    node->mqtt_message.topic = NULL;
     return spn_MAKE_NDEATH_FAILED;
 }
 
