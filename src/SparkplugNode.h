@@ -1,5 +1,5 @@
 /*
-Copyright 2024 Michael Keras
+Copyright 2024 Michael Keras.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,24 @@ extern "C" {
 #include <BasicTag.h>
 #include "EmbeddedSparkplugPayloads.h"
 
-typedef struct SparkplugNodeConfig SparkplugNodeConfig; // Forward declaration
+/* For future version
+typedef struct SparkplugMQTTBrokerDetails {
+    const char* host;
+    uint16_t port;
+    const char* client_id;
+    const char* username;
+    const char* password;
+    struct SparkplugMQTTBrokerDetails* next_broker;
+} SparkplugMQTTBrokerDetails;*/
+
+typedef struct SparkplugNodeConfig SparkplugNodeConfig;
+typedef struct SparkplugMQTTMessage SparkplugMQTTMessage;
+
+struct SparkplugMQTTMessage {
+    const char* topic;
+    BufferValue* payload;
+}; 
+
 
 struct SparkplugNodeConfig {
     const char* node_id;
@@ -51,8 +68,28 @@ struct SparkplugNodeConfig {
         bool force_scan;
         bool values_changed;
         uint8_t sequence;
+        bool initial_birth_made;
+        bool mqtt_connected;
     } vars;
+    SparkplugMQTTMessage mqtt_message;
 };
+
+
+typedef enum {
+    spn_ERROR_NODE_NULL = -1,
+    spn_SCAN_NOT_DUE = 0,
+    spn_SCAN_FAILED = 1,
+    spn_MAKE_NBIRTH_FAILED = 2,
+    spn_NBIRTH_PL_READY = 3,
+    spn_VALUES_UNCHANGED = 4,
+    spn_MAKE_NDATA_FAILED = 5,
+    spn_NDATA_PL_READY = 6,
+    spn_MAKE_NDEATH_FAILED = 7,
+    spn_NDEATH_PL_READY = 8,
+    spn_PROCESS_NCMD_FAILED = 9,
+    spn_PROCESS_NCMD_SUCCESS = 10
+} SparkplugNodeState;
+
 
 
 
@@ -72,10 +109,23 @@ bool scanDue(SparkplugNodeConfig* node);
 
 bool scanTags(SparkplugNodeConfig* node);
 
+
+SparkplugNodeState makeNDEATHPayload(SparkplugNodeConfig* node);
+
+SparkplugNodeState tickSparkplugNode(SparkplugNodeConfig* node);
+
+SparkplugNodeState processIncomingNCMDPayload(SparkplugNodeConfig* node, uint8_t* buffer, size_t length);
+
 /*
 Sparkplug Events
 */
+void spnOnMQTTConnected(SparkplugNodeConfig* node);
 
+void spnOnMQTTDisconnected(SparkplugNodeConfig* node);
+
+void spnOnPublishNBIRTH(SparkplugNodeConfig* node);
+
+void spnOnPublishNDATA(SparkplugNodeConfig* node);
 
 
 #ifdef __cplusplus

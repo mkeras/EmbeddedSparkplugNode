@@ -1,5 +1,5 @@
 /*
-Copyright 2024 Michael Keras
+Copyright 2024 Michael Keras.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -16,13 +16,14 @@ Copyright 2024 Michael Keras
 
 #include "EmbeddedSparkplugPayloads.h"
 
-static bool _SPARKPLUG_INITIALIZED = false;
+static bool _NODE_INITIALIZED = false;
 static BufferValue* _ENCODE_BUFFER = NULL;
 static StreamFunction* _ENCODE_STREAM = NULL;
 
 static const char* _bdseq_tag_name = "bdSeq";
 static const int _bdseq_tag_alias = -1000;
 static const char* _rebirth_tag_name = "Node Control/Rebirth";
+static const int _rebirth_tag_alias = -1001;
 static const char* _scan_rate_tag_name = "Node Control/Scan Rate";
 
 static const size_t _INCOMING_STRING_MAX_LEN = 1024;
@@ -42,6 +43,7 @@ static bool _encode_to_stream_callback(pb_ostream_t *stream, const uint8_t *buf,
     userFn((uint8_t*)buf, count);
     return true;
 }
+
 
 static bool _encode_payload(Payload* payload, BufferValue* buffer_ptr, StreamFunction* encodeFn) {
     // Encode to either user defined streaming function or to a buffer
@@ -76,12 +78,14 @@ static bool _pb_encode_string_callback(pb_ostream_t *stream, const pb_field_t *f
     return true;
 }
 
+
 static bool _pb_encode_bytes_callback(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
     const BufferValue* buffer_value = (const BufferValue*)(*arg);
     if (!pb_encode_tag_for_field(stream, field)) return false;
     if (!pb_encode_string(stream, (const uint8_t *)(buffer_value->buffer), buffer_value->written_length)) return false;
     return true;
 }
+
 
 static bool _pb_encode_single_metric_callback(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
     Payload_Metric* metric = (Payload_Metric*)(*arg);
@@ -150,9 +154,10 @@ static void _basic_value_to_metric(BasicValue* value, Payload_Metric* metric) {
 
 
 static bool _pb_encode_metrics_callback(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
-    // arg is bool flag for birth/rbe
-    bool* birth_ptr = (bool*)(*arg);
-    bool birth = *birth_ptr;
+    // arg is an array of 2 bools
+    bool *flags = *(bool **)arg; // Recasting and dereferencing
+    bool birth = flags[0];
+    bool is_historical = flags[1];
 
     for (size_t i = 0; i < getTagsCount(); i++) {
         FunctionalBasicTag* tag_ptr = getTagByIdx(i);
@@ -161,7 +166,13 @@ static bool _pb_encode_metrics_callback(pb_ostream_t *stream, const pb_field_t *
             if (!(tag_ptr->valueChanged) || tag_ptr->alias < -999) continue;
         }
         
-        Payload_Metric metric = Payload_Metric_init_zero;   
+        Payload_Metric metric = Payload_Metric_init_zero;
+
+        // Check if historical is required
+        if (is_historical) {
+            metric.has_is_historical = true;
+            metric.is_historical = true;
+        }   
         
         bool include_name = birth || tag_ptr->alias < 0;
         bool include_alias = tag_ptr->alias > -1;
@@ -211,6 +222,7 @@ static int _on_decode_metric_default(BasicValue* valueReceived, FunctionalBasicT
     return 1;
 }
 
+
 static bool _decode_string_callback(pb_istream_t *stream, const pb_field_iter_t *field, void **arg) {
     size_t str_length = stream->bytes_left;
     // Make Hard limit for incoming string length
@@ -225,6 +237,7 @@ static bool _decode_string_callback(pb_istream_t *stream, const pb_field_iter_t 
     *arg = char_buf;
     return true;
 }
+
 
 static bool _decode_buffer_callback(pb_istream_t *stream, const pb_field_iter_t *field, void **arg) {
     /*
@@ -414,7 +427,7 @@ Sparkplug Functions
 static bool _make_ndeath_payload(BufferValue* buffer_ptr, StreamFunction streamFn, uint64_t timestamp) {
     // Get the bdSeq Tag
     FunctionalBasicTag* bdSeq_tag = getTagByName("bdSeq");
-    if (bdSeq_tag == NULL || !_SPARKPLUG_INITIALIZED) return false;  // bdSeq doesn't exist, can't make ndeath payload
+    if (bdSeq_tag == NULL || !_NODE_INITIALIZED) return false;  // bdSeq doesn't exist, can't make ndeath payload
 
     Payload payload = Payload_init_zero;
 
@@ -437,8 +450,8 @@ static bool _make_ndeath_payload(BufferValue* buffer_ptr, StreamFunction streamF
 }
 
 
-static bool _make_metrics_payload(BufferValue* buffer_ptr, StreamFunction streamFn, uint64_t timestamp, int sequence, bool isBirth) {
-    if (!_SPARKPLUG_INITIALIZED) return false;
+static bool _make_metrics_payload(BufferValue* buffer_ptr, StreamFunction streamFn, uint64_t timestamp, int sequence, bool isBirth, bool isHistorical) {
+    if (!_NODE_INITIALIZED) return false;
 
     Payload payload = Payload_init_zero;
     payload.has_timestamp = true;
@@ -446,8 +459,11 @@ static bool _make_metrics_payload(BufferValue* buffer_ptr, StreamFunction stream
     payload.has_seq = true;
     payload.seq = sequence;
 
+    bool flags[2];
+    flags[0] = isBirth;
+    flags[1] = isHistorical;
     payload.metrics.funcs.encode = _pb_encode_metrics_callback;
-    payload.metrics.arg = (void*)(&isBirth);
+    payload.metrics.arg = (void*)(&flags);
 
     return _encode_payload(&payload, buffer_ptr, streamFn);
 }
@@ -467,11 +483,19 @@ bool makeNDEATH(uint64_t timestamp) {
 }
 
 bool makeNBIRTH(uint64_t timestamp, int sequence) {
-    return _make_metrics_payload(_ENCODE_BUFFER, _ENCODE_STREAM, timestamp, sequence, true);
+    return _make_metrics_payload(_ENCODE_BUFFER, _ENCODE_STREAM, timestamp, sequence, true, false);
+}
+
+bool makeHistoricalNBIRTH(uint64_t timestamp, int sequence) {
+    return _make_metrics_payload(_ENCODE_BUFFER, _ENCODE_STREAM, timestamp, sequence, true, true);
 }
 
 bool makeNDATA(uint64_t timestamp, int sequence) {
-    return _make_metrics_payload(_ENCODE_BUFFER, _ENCODE_STREAM, timestamp, sequence, false);
+    return _make_metrics_payload(_ENCODE_BUFFER, _ENCODE_STREAM, timestamp, sequence, false, false);
+}
+
+bool makeHistoricalNDATA(uint64_t timestamp, int sequence) {
+    return _make_metrics_payload(_ENCODE_BUFFER, _ENCODE_STREAM, timestamp, sequence, false, true);
 }
 
 bool processNCMD(uint8_t* buffer, size_t length, DecodeMetricCallback metric_callback) {
@@ -484,6 +508,7 @@ bool processNCMD(uint8_t* buffer, size_t length, DecodeMetricCallback metric_cal
 
    return result;
 }
+
 // Init Functions
 
 bool setEncodeStream(StreamFunction streamFn) {
@@ -525,7 +550,7 @@ bool initializeSparkplugTags(BufferValue* bufferVal, StreamFunction streamFn) {
     Set alias to negative number, this library ignores all tags with negative alias in RBE,
     and doesn't include the alias in Birth payloads
     */
-    if (_SPARKPLUG_INITIALIZED) return false;
+    if (_NODE_INITIALIZED) return false;
 
     if (bufferVal != NULL) {
         if (!setEncodeBuffer(bufferVal)) return false;
@@ -553,7 +578,7 @@ bool initializeSparkplugTags(BufferValue* bufferVal, StreamFunction streamFn) {
     bool* rebirth_value = (bool*)malloc(sizeof(bool));
     if (_abort_tags_init(rebirth_value, NULL)) return false;
     *rebirth_value = false;
-    rebirthTag = createBoolTag(_rebirth_tag_name, rebirth_value, -900, false, true);
+    rebirthTag = createBoolTag(_rebirth_tag_name, rebirth_value, _rebirth_tag_alias, false, true);
     if (_abort_tags_init(rebirthTag, rebirth_value)) return false;
 
 
@@ -565,12 +590,12 @@ bool initializeSparkplugTags(BufferValue* bufferVal, StreamFunction streamFn) {
     if (_abort_tags_init(scanRateTag, scan_rate_value)) return false;
     scanRateTag->validateWrite = _default_validate_scan_rate;
 
-    _SPARKPLUG_INITIALIZED = true;
+    _NODE_INITIALIZED = true;
 }
 
 
 bool deleteSparkplugTags() {
-    if (!_SPARKPLUG_INITIALIZED) return false;
+    if (!_NODE_INITIALIZED) return false;
     // deallocate the tag's value_address, then call deleteBasicTag
     FunctionalBasicTag* bdSeqTag = getTagByName(_bdseq_tag_name);
     if (bdSeqTag != NULL) {
@@ -587,13 +612,13 @@ bool deleteSparkplugTags() {
         free(scanRateTag->value_address);
         deleteTag(scanRateTag);
     }
-    _SPARKPLUG_INITIALIZED = false;
+    _NODE_INITIALIZED = false;
     return true;
 }
 
 
 bool sparkplugInitialized() {
-    return _SPARKPLUG_INITIALIZED;
+    return _NODE_INITIALIZED;
 }
 
 // Special getTag functions
@@ -610,22 +635,6 @@ FunctionalBasicTag* getScanRateTag() {
 
 // Sparkplug Event Action Functions
 
-static bool _increment_bdseq() {
-    if (!_SPARKPLUG_INITIALIZED) return false;
-    FunctionalBasicTag* bdseq_tag = getTagByName(_bdseq_tag_name);
-    if (bdseq_tag == NULL) return false;
-    if (bdseq_tag->value_address == NULL) return false;
-    int64_t* val_ptr = (int64_t*)(bdseq_tag->value_address); // cast the address
-    if (*val_ptr > 254) {
-        *val_ptr = 0;
-    } else {
-        *val_ptr += 1;
-    }
-    return true;
-}
 
-bool incrementBdSeq() {
-    return _increment_bdseq();
-}
 
 

@@ -1,5 +1,5 @@
 /*
-Copyright 2024 Michael Keras
+Copyright 2024 Michael Keras.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@ limitations under the License.
 
 #include "SparkplugNode.h"
 
-
-
+static const bool _USE_SPARKPLUG_3 = false;
 static const char* _TOPIC_NAMESPACE = "spBv1.0";
 static const size_t _TOPIC_NAMESPACE_LEN = 7;
 
@@ -69,6 +68,11 @@ SparkplugNodeConfig* createSparkplugNode(const char* group_id, const char* node_
     newNode->vars.force_scan = false;
     newNode->vars.values_changed = false;
     newNode->vars.sequence = 0;
+    newNode->vars.initial_birth_made = false;
+    newNode->vars.mqtt_connected = false;
+
+    newNode->mqtt_message.topic = NULL;
+    newNode->mqtt_message.payload = NULL;
 
     newNode->topics.NCMD = _make_topic_char(group_id, node_id, "NCMD");
     if (newNode->topics.NCMD == NULL) {
@@ -183,7 +187,126 @@ bool scanTags(SparkplugNodeConfig* node) {
 }
 
 
+static bool _make_nbirth_payload(SparkplugNodeConfig* node) {
+    if (!_USE_SPARKPLUG_3) {
+        node->vars.sequence = 0;
+    }
+    if (node->vars.mqtt_connected) return makeNBIRTH(node->timestamp_function(), node->vars.sequence);
+    return makeHistoricalNBIRTH(node->timestamp_function(), node->vars.sequence);
+}
+
+static bool _make_ndata_payload(SparkplugNodeConfig* node) {
+    // if (node == NULL) return false;
+    if (node->vars.mqtt_connected) return makeNDATA(node->timestamp_function(), node->vars.sequence);
+    return makeHistoricalNDATA(node->timestamp_function(), node->vars.sequence);
+}
+
+static void _increment_bdseq(int64_t* bdseq_ptr) {
+    if (bdseq_ptr == NULL) return;
+
+    if (*bdseq_ptr > 254) {
+        // rollover value
+        *bdseq_ptr = 0;
+    } else {
+        *bdseq_ptr += 1;
+    }
+    return;
+}
+
+SparkplugNodeState makeNDEATHPayload(SparkplugNodeConfig* node) {
+    // if (node == NULL) return false;
+
+    // check if it is initial connect or not
+    if (node->vars.initial_birth_made) {
+        // This is a new reconnect packet, increment bdSeq
+        _increment_bdseq(node->vars.bd_seq_tag_value);
+        readBasicTag(node->node_tags.bd_seq, node->timestamp_function());
+    }
+
+    if (makeNDEATH(node->timestamp_function())) return spn_NDATA_PL_READY;
+    return spn_MAKE_NDEATH_FAILED;
+}
+
+
+SparkplugNodeState tickSparkplugNode(SparkplugNodeConfig* node) {
+    if (node == NULL) return spn_ERROR_NODE_NULL;
+    if (!scanDue(node)) return spn_SCAN_NOT_DUE;
+
+    // Scan Tags
+    if (!scanTags(node)) {
+        node->vars.last_scan = node->timestamp_function();
+        return spn_SCAN_FAILED;
+    }
+
+    // Check if rebirth command is set or if initial birth has been made
+    if (*(node->vars.rebirth_tag_value) || !node->vars.initial_birth_made) {
+        // Reset rebirth tag to false
+        *(node->vars.rebirth_tag_value) = false;
+        readBasicTag(node->node_tags.rebirth, node->timestamp_function());
+
+        // check if payload was made
+        if (!_make_nbirth_payload(node)) {
+            node->mqtt_message.payload = NULL;
+            node->mqtt_message.topic = NULL;
+            return spn_MAKE_NBIRTH_FAILED;
+        }
+
+        node->mqtt_message.payload = &(node->payload_buffer);
+        node->mqtt_message.topic = node->topics.NBIRTH;
+        return spn_NBIRTH_PL_READY;
+    }
+
+    if (!(node->vars.values_changed)) {
+        node->mqtt_message.payload = NULL;
+        node->mqtt_message.topic = NULL;
+        return spn_VALUES_UNCHANGED;
+    }
+
+    if (!_make_ndata_payload(node)) {
+        node->mqtt_message.payload = NULL;
+        node->mqtt_message.topic = NULL;
+        return spn_MAKE_NDATA_FAILED;
+    }
+
+    node->mqtt_message.payload = &(node->payload_buffer);
+    node->mqtt_message.topic = node->topics.NDATA;
+    return spn_NDATA_PL_READY;
+}
+
+SparkplugNodeState processIncomingNCMDPayload(SparkplugNodeConfig* node, uint8_t* buffer, size_t length) {
+    // flag for immediate scan
+    node->vars.force_scan = true;
+    if (processNCMD(buffer, length, NULL)) return spn_PROCESS_NCMD_SUCCESS;
+    return spn_PROCESS_NCMD_FAILED;
+}
+
+
 /*
 Sparkplug Events
 */
 
+static void _on_publish_payload(SparkplugNodeConfig* node) {
+    node->vars.sequence++;
+}
+
+
+void spnOnMQTTConnected(SparkplugNodeConfig* node) {
+    if (node == NULL) return;
+    node->vars.mqtt_connected = true;
+}
+
+void spnOnMQTTDisconnected(SparkplugNodeConfig* node) {
+    if (node == NULL) return;
+    node->vars.mqtt_connected = false;
+}
+
+
+void spnOnPublishNBIRTH(SparkplugNodeConfig* node) {
+    // check if initial_birth_made is set
+    if (!node->vars.initial_birth_made) node->vars.initial_birth_made = true;
+    _on_publish_payload(node);
+}
+
+void spnOnPublishNDATA(SparkplugNodeConfig* node) {
+    _on_publish_payload(node);
+}

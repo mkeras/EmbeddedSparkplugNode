@@ -1,5 +1,5 @@
 /*
-Copyright 2024 Michael Keras
+Copyright 2024 Michael Keras.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ extern "C" {
 #include "pb_decode.h"
 #include "sparkplug.pb.h"
 #include <BasicTag.h>
-
 
 
 typedef void (*StreamFunction)(uint8_t* byte_ptr, size_t length);
@@ -68,11 +67,12 @@ FunctionalBasicTag* getRebirthTag();
 FunctionalBasicTag* getScanRateTag();
 
 // Sparkplug Event Action Functions
-bool incrementBdSeq();
 
 bool makeNDEATH(uint64_t timestamp);
 bool makeNBIRTH(uint64_t timestamp, int sequence);
+bool makeHistoricalNDATA(uint64_t timestamp, int sequence);
 bool makeNDATA(uint64_t timestamp, int sequence);
+bool makeHistoricalNDATA(uint64_t timestamp, int sequence);
 
 // decode functions
 
