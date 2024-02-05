@@ -62,7 +62,7 @@ struct SparkplugNodeConfig {
     } node_tags;
     struct Variables {
         bool* rebirth_tag_value;
-        uint32_t* scan_rate_tag_value;
+        int64_t* scan_rate_tag_value;
         int64_t* bd_seq_tag_value;
         uint64_t last_scan;
         bool force_scan;
@@ -87,7 +87,9 @@ typedef enum {
     spn_MAKE_NDEATH_FAILED = 7,
     spn_NDEATH_PL_READY = 8,
     spn_PROCESS_NCMD_FAILED = 9,
-    spn_PROCESS_NCMD_SUCCESS = 10
+    spn_PROCESS_NCMD_SUCCESS = 10,
+    spn_HISTORICAL_NBIRTH_PL_READY = 11,
+    spn_HISTORICAL_NDATA_PL_READY = 12
 } SparkplugNodeState;
 
 

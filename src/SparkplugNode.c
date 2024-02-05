@@ -119,7 +119,7 @@ SparkplugNodeConfig* createSparkplugNode(const char* group_id, const char* node_
     newNode->vars.bd_seq_tag_value = (int64_t*)(newNode->node_tags.bd_seq->value_address);
     
     newNode->node_tags.scan_rate = getScanRateTag();
-    newNode->vars.scan_rate_tag_value = (uint32_t*)(newNode->node_tags.scan_rate->value_address);
+    newNode->vars.scan_rate_tag_value = (int64_t*)(newNode->node_tags.scan_rate->value_address);
 
     newNode->node_tags.rebirth = getRebirthTag();
     newNode->vars.rebirth_tag_value = (bool*)(newNode->node_tags.rebirth->value_address);
@@ -220,13 +220,13 @@ SparkplugNodeState makeNDEATHPayload(SparkplugNodeConfig* node) {
     if (node->vars.initial_birth_made) {
         // This is a new reconnect packet, increment bdSeq
         _increment_bdseq(node->vars.bd_seq_tag_value);
-        readBasicTag(node->node_tags.bd_seq, node->timestamp_function());
     }
+    readBasicTag(node->node_tags.bd_seq, node->timestamp_function());
 
     if (makeNDEATH(node->timestamp_function())) {
         node->mqtt_message.payload = &(node->payload_buffer);
-        node->mqtt_message.topic = node->topics.NBIRTH;
-        return spn_NDATA_PL_READY;
+        node->mqtt_message.topic = node->topics.NDEATH;
+        return spn_NDEATH_PL_READY;
     }
     node->mqtt_message.payload = NULL;
     node->mqtt_message.topic = NULL;
@@ -259,7 +259,8 @@ SparkplugNodeState tickSparkplugNode(SparkplugNodeConfig* node) {
 
         node->mqtt_message.payload = &(node->payload_buffer);
         node->mqtt_message.topic = node->topics.NBIRTH;
-        return spn_NBIRTH_PL_READY;
+        if (node->vars.mqtt_connected) return spn_NBIRTH_PL_READY;
+        return spn_HISTORICAL_NBIRTH_PL_READY;
     }
 
     if (!(node->vars.values_changed)) {
@@ -276,8 +277,10 @@ SparkplugNodeState tickSparkplugNode(SparkplugNodeConfig* node) {
 
     node->mqtt_message.payload = &(node->payload_buffer);
     node->mqtt_message.topic = node->topics.NDATA;
-    return spn_NDATA_PL_READY;
+    if (node->vars.mqtt_connected) return spn_NDATA_PL_READY;
+    return spn_HISTORICAL_NDATA_PL_READY;
 }
+
 
 SparkplugNodeState processIncomingNCMDPayload(SparkplugNodeConfig* node, uint8_t* buffer, size_t length) {
     // flag for immediate scan
@@ -299,6 +302,10 @@ static void _on_publish_payload(SparkplugNodeConfig* node) {
 void spnOnMQTTConnected(SparkplugNodeConfig* node) {
     if (node == NULL) return;
     node->vars.mqtt_connected = true;
+    if (node->vars.initial_birth_made) {
+        // flag rebirth on next tick
+        *(node->vars.rebirth_tag_value) = true;
+    }
 }
 
 void spnOnMQTTDisconnected(SparkplugNodeConfig* node) {

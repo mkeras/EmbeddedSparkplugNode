@@ -528,7 +528,7 @@ static int64_t _get_bdseq_default() {
     return 0;
 }
 
-static uint32_t _get_scan_rate_default() {
+static int64_t _get_scan_rate_default() {
     // To be expanded, load from flash memory, etc
     return 1000;
 }
@@ -583,10 +583,10 @@ bool initializeSparkplugTags(BufferValue* bufferVal, StreamFunction streamFn) {
 
 
     // Create Scan Rate
-    uint32_t* scan_rate_value = (uint32_t*)malloc(sizeof(uint32_t));
+    int64_t* scan_rate_value = (int64_t*)malloc(sizeof(int64_t));
     if (_abort_tags_init(scan_rate_value, NULL)) return false;
     *scan_rate_value = _get_scan_rate_default();
-    scanRateTag = createUInt32Tag(_scan_rate_tag_name, scan_rate_value, -901, false, true);
+    scanRateTag = createInt64Tag(_scan_rate_tag_name, scan_rate_value, -901, false, true);
     if (_abort_tags_init(scanRateTag, scan_rate_value)) return false;
     scanRateTag->validateWrite = _default_validate_scan_rate;
 
