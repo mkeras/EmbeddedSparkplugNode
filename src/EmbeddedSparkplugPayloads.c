@@ -310,10 +310,13 @@ static bool _decode_metric_callback(pb_istream_t *stream, const pb_field_iter_t 
     }
 
     // if incoming metric datatype does not match tag, ignore it
-    // if (metric.datatype != matchedTag->datatype) {
-    //     if (metric_value.value.bytesValue != NULL) deallocateBufferValue(&metric_value);
-    //     return true;
-    // }
+    if (metric.datatype != matchedTag->datatype) {
+        // Ignition (Java) sends uint64 as int64, so make exception for that scenario
+        if (matchedTag->datatype != spUInt64 && metric.datatype != (int)spInt64) {
+            if (metric_value.value.bytesValue != NULL) deallocateBufferValue(&metric_value);
+            return true;
+        }
+    }
 
     metric_value.datatype = matchedTag->datatype;
     metric_value.timestamp = metric.timestamp;
