@@ -287,7 +287,7 @@ static bool _decode_metric_callback(pb_istream_t *stream, const pb_field_iter_t 
     FunctionalBasicTag* matchedTag = NULL;
     if (metric.has_alias) {
         // Get tag by alias
-        matchedTag = getTagByAlias(metric.alias);
+        matchedTag = getTagByAlias((int)metric.alias);
     } else if (metric.name.arg != NULL) {
         // If there was no alias, check and find it by name
         matchedTag = getTagByName((char*)(metric.name.arg));
@@ -310,10 +310,10 @@ static bool _decode_metric_callback(pb_istream_t *stream, const pb_field_iter_t 
     }
 
     // if incoming metric datatype does not match tag, ignore it
-    if (metric.datatype != matchedTag->datatype) {
-        if (metric_value.value.bytesValue != NULL) deallocateBufferValue(&metric_value);
-        return true;
-    }
+    // if (metric.datatype != matchedTag->datatype) {
+    //     if (metric_value.value.bytesValue != NULL) deallocateBufferValue(&metric_value);
+    //     return true;
+    // }
 
     metric_value.datatype = matchedTag->datatype;
     metric_value.timestamp = metric.timestamp;
