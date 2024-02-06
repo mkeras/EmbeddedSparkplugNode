@@ -326,7 +326,7 @@ static bool _decode_metric_callback(pb_istream_t *stream, const pb_field_iter_t 
         metric_value.isNull = true;
     } else {
         metric_value.isNull = false;
-        switch (metric.datatype) {
+        switch (metric_value.datatype) {
             case spInt8:
                 metric_value.value.int8Value = (int8_t)(metric.value.int_value);
                 break;
