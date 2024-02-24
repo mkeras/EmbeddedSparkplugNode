@@ -594,6 +594,7 @@ bool initializeSparkplugTags(BufferValue* bufferVal, StreamFunction streamFn) {
     scanRateTag->validateWrite = _default_validate_scan_rate;
 
     _NODE_INITIALIZED = true;
+    return true;
 }
 
 
