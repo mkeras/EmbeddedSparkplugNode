@@ -1,5 +1,9 @@
 # EmbeddedSparkplugNode Library Documentation
 
+## V0.2.4
+- Added readOnly property to Birth payloads. readOnly set to true when a tag's remote_writable is false, and vice versa.
+- Future version will have the option to add custom properties to tags.
+
 ## V0.2.3
 - Minor Bug Fixes.
 - Updated supported architectures to exclude AVR boards for the time being, as there are some issues with larger datatypes (double, uint64_t, etc). Undecided on solution for this issue (create seperate library for AVR/8 bit controllers or fully implement AVR compatibility).

@@ -33,8 +33,21 @@ static const uint32_t _SCAN_RATE_MIN = 500;
 static const uint32_t _SCAN_RATE_MAX = 600000;
 
 /*
+Static declarations
+*/
+
+// This struct will be declared and used in a future version,
+// for use in functions to add multiple properties to a Metric
+ typedef struct {
+     void **array_ptrs; // Array of void pointers
+     size_t array_len; // Number of pointers
+} VoidArray;
+
+
+/*
 Nanopb encode functions
 */
+
 
 static bool _encode_to_stream_callback(pb_ostream_t *stream, const uint8_t *buf, size_t count) {
     StreamFunction userFn = (StreamFunction)stream->state;
@@ -75,6 +88,35 @@ static bool _pb_encode_string_callback(pb_ostream_t *stream, const pb_field_t *f
     const char* str = (const char *)(*arg);
     if (!pb_encode_tag_for_field(stream, field)) return false;
     if (!pb_encode_string(stream, (const uint8_t *)str, strlen(str))) return false;
+    return true;
+}
+
+
+/*
+The following 2 functions encode properties to metrics.
+In a future version more value options and functions for handling array of properties will be added
+*/
+static bool _pb_encode_property_names(pb_ostream_t *stream, const pb_field_iter_t *field, void *const *arg) {
+    char **property_key_array = *(char ***)arg;
+
+    for (size_t i = 0; property_key_array[i] != NULL; i++) {
+        if (!pb_encode_tag_for_field(stream, field)) return false;
+        const char* str_arg = property_key_array[i];
+        if (!pb_encode_string(stream, (const uint8_t*)str_arg, strlen(str_arg))) return false;
+    }
+
+    return true;
+}
+
+
+static bool _pb_encode_property_values(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
+    Payload_PropertyValue** property_values = *(Payload_PropertyValue ***)arg;
+    for (size_t i = 0; property_values[i] != NULL; i++) {
+        if (!pb_encode_tag_for_field(stream, field)) return false;
+        
+        if (!pb_encode_submessage(stream, Payload_PropertyValue_fields, property_values[i])) return false;
+        
+    }
     return true;
 }
 
@@ -191,13 +233,36 @@ static bool _pb_encode_metrics_callback(pb_ostream_t *stream, const pb_field_t *
             metric.name.arg = (void*)tag_ptr->name;
         }
 
-        if (birth) {
-            // TODO Include properties
+        if (!birth) {
+            // If it's not a birth payload, it's ready to encode
+            if (!pb_encode_tag_for_field(stream, field)) return false;
+            if (!pb_encode_submessage(stream, Payload_Metric_fields, &metric)) return false;
+            continue;
         }
+
+        // Include properties in birth payload
+        Payload_PropertySet tag_properties = Payload_PropertySet_init_zero;
+
+        tag_properties.keys.funcs.encode = _pb_encode_property_names;
+        char* property_key_array[] = {"readOnly", NULL}; 
+        tag_properties.keys.arg = property_key_array;
+
+        tag_properties.values.funcs.encode = _pb_encode_property_values;
+
+        //tag_properties.values.funcs.arg = &read_only;
+        Payload_PropertyValue property_value = Payload_PropertyValue_init_zero;
+        property_value.has_type = true;
+        property_value.type = (uint32_t)11;  // boolean datatype code
+        property_value.which_value = Payload_PropertyValue_boolean_value_tag;
+        property_value.value.boolean_value = !(tag_ptr->remote_writable);
+        Payload_PropertyValue* property_values[] = {&property_value, NULL};
+        tag_properties.values.arg = (void*)property_values;
+        
+        metric.has_properties = true;
+        metric.properties = tag_properties;
 
         // finally encode the metric
         if (!pb_encode_tag_for_field(stream, field)) return false;
-
         if (!pb_encode_submessage(stream, Payload_Metric_fields, &metric)) return false;
     }
 
