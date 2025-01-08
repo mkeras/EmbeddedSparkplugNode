@@ -13,7 +13,7 @@ This library is written in C and builds on top of the [BasicTag](https://github.
 
 
 ## Notes
-- This library has not yet been thoroughly tested, it can be considered alpha. I'm still fairly green to C programming. Any feedback for bugs, suggestions, etc is appreciated.
+- This library has not yet been thoroughly tested, it can be considered alpha, and is currently just a hobby project. Any feedback for bugs, suggestions, etc is appreciated.
 - As noted in the overview, this library contains all the components to operate an edge of network node, but will need to be combined with an appropriate MQTT client library by the user. A full demonstration of this will be added to the example Arduino sketches in the near future.
 - Sparkplug B, MQTT, and other related terms are trademarks of their respective owners. Any use of these terms in this project is for descriptive purposes only and does not imply any endorsement or affiliation.
 - The current purpose of this library is to provide an open-source implementation of the Sparkplug B MQTT payload standard for hobbyist, educational and development uses.
@@ -138,7 +138,25 @@ This callback function is called when an incoming NCMD message is received and r
 ```c
 SparkplugNodeState processIncomingNCMDPayload(SparkplugNodeConfig* node, uint8_t* buffer, size_t length);
 ```
+This function is meant to be called by the handler/callback for an incoming MQTT message. For example, with pubsub client you could use the following wrapper and then set the callback on your pubsubclient:
+```cpp
+void NCMDcallback(const char[] topic, byte* payload, unsigned int length) {
+    SparkplugNodeState result = processIncomingNCMDPayload(yourSparkplugNodeConfigInstanceName, payload, length);
 
+    // additional logic to handle result (success or failure), etc.
+
+}
+```
+Something like this would then be in your setup code section:
+```cpp
+yourPubsubclientInstanceName.setCallback(NCMDcallback);
+```
+And in your MQTT on connect handler something like this:
+```cpp
+yourPubsubclientInstanceName.subscribe(yourSparkplugNodeConfigInstanceName->topics.NCMD);
+```
+
+<br><br>
 This is not technically a callback, but it is called just before connecting to an mqtt broker to supply the death payload and topic to the broker:
 ```c
 SparkplugNodeState makeNDEATHPayload(SparkplugNodeConfig* node);
